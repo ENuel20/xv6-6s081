@@ -22,6 +22,12 @@ main(int argc, char *argv[])
   for(i = 2; i < argc && i < MAXARG; i++){
     nargv[i-2] = argv[i];
   }
+  
+  nargv[i-2] = 0;
+  // DEBUG LINE: Let's prove what trace is passing!
+  printf("DEBUG: trace is execing [%s] with arg [%s]\n", nargv[0], nargv[1]);  
   exec(nargv[0], nargv);
-  exit(0);
+  
+  fprintf(2, "exec failed\n");
+  exit(1);
 }

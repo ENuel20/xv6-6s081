@@ -1,0 +1,27 @@
+Script started on 2026-03-09 22:37:24+01:00 [TERM="xterm-256color" TTY="/dev/pts/5" COLUMNS="114" LINES="27"]
+[?2004h]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ l
+[?2004l[0m[01;34mconf[0m/   [01;32mgrade-lab-util[0m*  [01;34mkernel[0m/  Makefile  [01;34m__pycache__[0m/  [01;34muser[0m/        xv6.out
+fs.img  gradelib.py      LICENSE  [01;34mmkfs[0m/     README        xv6_log.txt
+[?2004h]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ [7mmake qemu[27mmake qemu
+[?2004lqemu-system-riscv64 -machine virt -bios none -kernel kernel/kernel -m 128M -smp 3 -nographic -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+qemu-system-riscv64: -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0: Failed to get "write" lock
+Is another process using the image [fs.img]?
+make: *** [Makefile:306: qemu] Error 1
+[?2004h]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ [7mmake qemu[27mmake qemu
+[?2004lqemu-system-riscv64 -machine virt -bios none -kernel kernel/kernel -m 128M -smp 3 -nographic -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
+xv6 kernel is booting
+
+hart 1 starting
+hart 2 starting
+init: starting sh
+$ make qemu         find . b | xargs grep hello
+$ [A[Bfind . uptime | ar  xargs grep hello
+exec [A[Bfind failed
+$ 
+exec  failed
+$ eit  u it    Ax  QEMU: Terminated
+[?2004h]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ [K]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ [K]0;user_nuel21@Nuel20: ~/xv6-labs-2021[01;32muser_nuel21@Nuel20[00m:[01;34m~/xv6-labs-2021[00m$ exit
+[?2004lexit
+
+Script done on 2026-03-09 22:40:52+01:00 [COMMAND_EXIT_CODE="0"]
