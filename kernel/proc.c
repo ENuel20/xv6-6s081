@@ -126,6 +126,13 @@ found:
     release(&p->lock);
     return 0;
   }
+  
+  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  p->usyscall->pid = p->pid;
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -153,6 +160,12 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  if(p->usyscall)
+    kfree(((void*)p->usyscall));
+  p->usyscall = 0;
+  
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -195,6 +208,14 @@ proc_pagetable(struct proc *p)
     uvmfree(pagetable, 0);
     return 0;
   }
+  // map the usyscall just below TRAMPOLINE, for trampoline.S.
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+        (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable,0);
+    return 0;
+  }
 
   return pagetable;
 }
@@ -206,6 +227,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
@@ -264,6 +286,21 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+  return 0;
+}
+
+uint64
+sys_trace(void)
+{
+  int mask;
+  
+  // Retrieve the first argument (integer mask)
+  if(argint(0, &mask) < 0)
+    return -1;
+    
+  // Assign it to the current process
+ // myproc()->trace_mask = mask;
+  
   return 0;
 }
 
@@ -610,7 +647,6 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)
     return 0;
   }
 }
-
 // Copy from either a user address, or kernel address,
 // depending on usr_src.
 // Returns 0 on success, -1 on error.
@@ -629,6 +665,8 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
+
+
 void
 procdump(void)
 {
@@ -653,4 +691,19 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64 proc_count(void){
+    struct proc *p;
+    uint64 count = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      count++;
+    }
+    release(&p->lock);
+  }
+  
+  return count;
 }

@@ -269,6 +269,7 @@ freewalk(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
+
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
@@ -431,4 +432,39 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void
+vmprint_recursive(pagetable_t pagetable, int level)
+{
+  // There are 512 Page Table Entries (PTEs) per page
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    
+    // Only process if the Valid bit (PTE_V) is set
+    if(pte & PTE_V){
+      // Print indentation: ".." per level of depth
+      if(level == 0) printf("..%d: ", i);
+      else if(level == 1) printf(".. ..%d: ", i);
+      else if(level == 2) printf(".. .. ..%d: ", i);
+
+      uint64 pa = PTE2PA(pte);
+      printf("pte %p pa %p\n", pte, pa);
+
+      // Check if this is a pointer to a lower-level table
+      // In RISC-V, if R/W/X are all 0, it's a non-leaf (directory) node
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0){
+        uint64 child = PTE2PA(pte);
+        vmprint_recursive((pagetable_t)child, level + 1);
+      }
+    }
+  }
+}
+
+// This is the function called from exec.c with one argument
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  vmprint_recursive(pagetable, 0);
 }
