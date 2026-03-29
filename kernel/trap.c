@@ -37,19 +37,17 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  struct proc *p = myproc();
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
-  // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
+  // send future traps/exceptions to kerneltrap(), since we're now in the kernel
   w_stvec((uint64)kernelvec);
 
-  struct proc *p = myproc();
-  
-  // save user program counter.
+  // save user program counter
   p->trapframe->epc = r_sepc();
-  
+
   if(r_scause() == 8){
     // system call
 
@@ -60,13 +58,55 @@ usertrap(void)
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
 
-    // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
+    // enable interrupts now that we're done with state that must be atomic
     intr_on();
 
     syscall();
+
+  } else if(r_scause() == 15 || r_scause() == 13){
+    // store page fault: could be a COW write fault
+    // load page fault
+
+    uint64 va = r_stval();
+    va = PGROUNDDOWN(va);
+
+    if(va >= MAXVA){
+      p->killed = 1;
+    } else {
+      pte_t *pte = walk(p->pagetable, va, 0);
+
+      if(pte == 0 ||
+         (*pte & PTE_V) == 0 ||
+         (*pte & PTE_U) == 0 ||
+         (*pte & PTE_COW) == 0){
+        // not a valid user COW page
+        p->killed = 1;
+      } else {
+        uint64 pa = PTE2PA(*pte);
+        uint flags = PTE_FLAGS(*pte);
+
+        char *mem = kalloc();
+        if(mem == 0){
+          p->killed = 1;
+        } else {
+          memmove(mem, (char*)pa, PGSIZE);
+
+          // new page should become writable, and no longer be marked COW
+          flags |= PTE_W;
+          flags &= ~PTE_COW;
+
+          // replace mapping with the private copied page
+          *pte = PA2PTE((uint64)mem) | flags;
+
+          // old shared page loses one reference
+          kfree((void*)pa);
+        }
+      }
+    }
+
   } else if((which_dev = devintr()) != 0){
     // ok
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -76,7 +116,7 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
+  // give up the CPU on clock interrupt
   if(which_dev == 2)
     yield();
 
