@@ -10,14 +10,32 @@
 #define STACK_SIZE  8192
 #define MAX_THREAD  4
 
+struct context {
+  uint64 ra;
+  uint64 sp;
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
 
 struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
+  struct  context context;
 };
 struct thread all_thread[MAX_THREAD];
 struct thread *current_thread;
-extern void thread_switch(uint64, uint64);
+
+extern void thread_switch(struct context*, struct context*);
               
 void 
 thread_init(void)
@@ -62,6 +80,11 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+
+     /* * Pass the address of the 'ra' field for both threads.
+     * This way, the assembly starts at offset 0 from these pointers.
+     */
+    thread_switch(&t->context, &next_thread->context);
   } else
     next_thread = 0;
 }
@@ -75,7 +98,12 @@ thread_create(void (*func)())
     if (t->state == FREE) break;
   }
   t->state = RUNNABLE;
-  // YOUR CODE HERE
+  // Set the return address to the function the thread should run
+  t->context.ra = (uint64)func;
+  
+  // Set the stack pointer to the top of the stack (it grows down)
+  // we point to the end of the stack array
+  t->context.sp = (uint64)&t->stack[STACK_SIZE];
 }
 
 void 
