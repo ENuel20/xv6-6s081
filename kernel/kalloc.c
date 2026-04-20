@@ -14,19 +14,34 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+// each free list
 struct run {
   struct run *next;
 };
 
+//kernel memory allocator
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
+
+static int cpu_id(){
+  int id;
+  push_off();
+  id = cpuid();
+  pop_off();
+  return id;
+}
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  char name[16];
+  for(int i = 0; i < NCPU; i++){
+    //snprintf(name, sizeof(name), "kmem%d", i);
+    initlock(&kmem[i].lock, name);
+    kmem[i].freelist = 0;
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -55,11 +70,12 @@ kfree(void *pa)
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
+  int id = cpu_id();
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,14 +85,34 @@ void *
 kalloc(void)
 {
   struct run *r;
+  int id = cpu_id();
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem[id].freelist = r->next;
+  release(&kmem[id].lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+
+    // Local freelist empty: steal from other CPUs.
+  for(int i = 0; i < NCPU; i++){
+    if(i == id)
+      continue;
+
+    acquire(&kmem[i].lock);
+    r = kmem[i].freelist;
+    if(r)
+      kmem[i].freelist = r->next;
+    release(&kmem[i].lock);
+
+    if(r){
+      memset((char*)r, 5, PGSIZE);
+      return (void*)r;
+    }
+  }
+
+  return 0;
 }

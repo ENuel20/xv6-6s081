@@ -19,7 +19,9 @@ main(void)
   if(open("console", O_RDWR) < 0){
     mknod("console", CONSOLE, 0);
     mknod("statistics", STATS, 0);
-    open("console", O_RDWR);
+    if (open("console", O_RDWR) < 0) {
+      exit(1);
+    }
   }
   dup(0);  // stdout
   dup(0);  // stderr
