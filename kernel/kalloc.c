@@ -11,35 +11,23 @@
 
 void freerange(void *pa_start, void *pa_end);
 
-extern char end[]; // first address after kernel.
-                   // defined by kernel.ld.
+extern char end[]; // first address after kernel
+                   // defined by kernel.ld
 
-// each free list
 struct run {
   struct run *next;
 };
 
-//kernel memory allocator
 struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem[NCPU];
 
-static int cpu_id(){
-  int id;
-  push_off();
-  id = cpuid();
-  pop_off();
-  return id;
-}
-
 void
 kinit()
 {
-  char name[16];
   for(int i = 0; i < NCPU; i++){
-    //snprintf(name, sizeof(name), "kmem%d", i);
-    initlock(&kmem[i].lock, name);
+    initlock(&kmem[i].lock, "kmem");
     kmem[i].freelist = 0;
   }
   freerange(end, (void*)PHYSTOP);
@@ -54,23 +42,22 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
-// Free the page of physical memory pointed at by v,
-// which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
 void
 kfree(void *pa)
 {
   struct run *r;
+  int id;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
-  int id = cpu_id();
+
+  push_off();
+  id = cpuid();
+  pop_off();
 
   acquire(&kmem[id].lock);
   r->next = kmem[id].freelist;
@@ -78,26 +65,29 @@ kfree(void *pa)
   release(&kmem[id].lock);
 }
 
-// Allocate one 4096-byte page of physical memory.
-// Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
 void *
 kalloc(void)
 {
   struct run *r;
-  int id = cpu_id();
+  int id;
 
+  push_off();
+  id = cpuid();
+  pop_off();
+
+  // Try local freelist first.
   acquire(&kmem[id].lock);
   r = kmem[id].freelist;
   if(r)
     kmem[id].freelist = r->next;
   release(&kmem[id].lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  if(r){
+    memset((char*)r, 5, PGSIZE);
+    return (void*)r;
+  }
 
-    // Local freelist empty: steal from other CPUs.
+  // Steal from other CPUs if local list is empty.
   for(int i = 0; i < NCPU; i++){
     if(i == id)
       continue;
