@@ -28,8 +28,8 @@ kinit()
 {
   char name[16];
   for(int i = 0; i < NCPU; i++){
-    snprintf(name, sizeof(name), "kmem%d", i);  // ← COMMENTED OUT
-    initlock(&kmem[i].lock, name);               // ← using uninitialized 'name'
+    snprintf(name, sizeof(name), "kmem%d", i);  
+    initlock(&kmem[i].lock, name);               
     kmem[i].freelist = 0;
   }
   freerange(end, (void*)PHYSTOP);
