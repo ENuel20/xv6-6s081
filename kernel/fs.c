@@ -380,23 +380,63 @@ bmap(struct inode *ip, uint bn)
   uint addr, *a;
   struct buf *bp;
 
+  // Direct blocks
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
   }
+
   bn -= NDIRECT;
 
+  // Single indirect block
   if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
+
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
       log_write(bp);
     }
+
+    brelse(bp);
+    return addr;
+  }
+
+  bn -= NINDIRECT;
+
+  // Double indirect block
+  if(bn < NDINDIRECT){
+    if((addr = ip->addrs[NDIRECT + 1]) == 0)
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    uint first = bn / NINDIRECT;
+    uint second = bn % NINDIRECT;
+
+    // Allocate/find the second-level indirect block
+    if((addr = a[first]) == 0){
+      a[first] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+
+    brelse(bp);
+
+    // Read second-level indirect block
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    // Allocate/find actual data block
+    if((addr = a[second]) == 0){
+      a[second] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+
     brelse(bp);
     return addr;
   }
@@ -410,9 +450,10 @@ void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bp2;
+  uint *a, *a2;
 
+  // Free direct blocks
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
       bfree(ip->dev, ip->addrs[i]);
@@ -420,22 +461,49 @@ itrunc(struct inode *ip)
     }
   }
 
+  // Free single indirect blocks
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
-      if(a[j])
-        bfree(ip->dev, a[j]);
+
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i])
+        bfree(ip->dev, a[i]);
     }
+
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
   }
 
+  // Free double indirect blocks
+  if(ip->addrs[NDIRECT + 1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i]){
+        bp2 = bread(ip->dev, a[i]);
+        a2 = (uint*)bp2->data;
+
+        for(j = 0; j < NINDIRECT; j++){
+          if(a2[j])
+            bfree(ip->dev, a2[j]);
+        }
+
+        brelse(bp2);
+        bfree(ip->dev, a[i]);
+      }
+    }
+
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
+  }
+
   ip->size = 0;
   iupdate(ip);
 }
-
 // Copy stat information from inode.
 // Caller must hold ip->lock.
 void
