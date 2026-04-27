@@ -135,6 +135,12 @@ found:
     return 0;
   }
 
+  p->mmap_base = MAXVA - 2*PGSIZE;
+
+  for(int i = 0; i < NVMA; i++){
+  p->vmas[i].used = 0;
+  }
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -152,9 +158,19 @@ freeproc(struct proc *p)
 {
   if(p->trapframe)
     kfree((void*)p->trapframe);
+
   p->trapframe = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used){
+      fileclose(p->vmas[i].file);
+      p->vmas[i].used = 0;
+    }
+  }
+
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -315,6 +331,17 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used){
+    np->vmas[i] = p->vmas[i];
+    filedup(np->vmas[i].file);
+    } 
+    else {
+      np->vmas[i].used = 0;
+    }
+  }
+  np->mmap_base = p->mmap_base;
+
   return pid;
 }
 
@@ -343,6 +370,11 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used)
+      munmapaddr(p->vmas[i].addr, p->vmas[i].length);
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

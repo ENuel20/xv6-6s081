@@ -484,3 +484,74 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int length, prot, flags, fd, offset;
+  struct file *f;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  if(argint(1, &length) < 0)
+    return -1;
+  if(argint(2, &prot) < 0)
+    return -1;
+  if(argint(3, &flags) < 0)
+    return -1;
+  if(argfd(4, &fd, &f) < 0)
+    return -1;
+  if(argint(5, &offset) < 0)
+    return -1;
+
+  if(length <= 0)
+    return -1;
+
+  if((prot & PROT_WRITE) && flags == MAP_SHARED && !f->writable)
+    return -1;
+
+  if((prot & PROT_READ) && !f->readable)
+    return -1;
+
+  uint64 len = PGROUNDUP(length);
+  uint64 mapaddr = p->mmap_base - len;
+
+  int slot = -1;
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used == 0){
+      slot = i;
+      break;
+    }
+  }
+
+  if(slot < 0)
+    return -1;
+
+  p->vmas[slot].used = 1;
+  p->vmas[slot].addr = mapaddr;
+  p->vmas[slot].length = len;
+  p->vmas[slot].prot = prot;
+  p->vmas[slot].flags = flags;
+  p->vmas[slot].file = filedup(f);
+  p->vmas[slot].offset = offset;
+
+  p->mmap_base = mapaddr;
+
+  return mapaddr;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int length;
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  if(argint(1, &length) < 0)
+    return -1;
+
+  return munmapaddr(addr, length);
+}

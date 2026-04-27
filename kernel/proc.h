@@ -1,3 +1,15 @@
+struct file;
+#define NVMA 16
+struct vma {
+  int used;              // 1 if this VMA slot is active
+  uint64 addr;           // starting virtual address
+  uint64 length;         // length of mapped region
+  int prot;              // PROT_READ / PROT_WRITE
+  int flags;             // MAP_SHARED / MAP_PRIVATE
+  struct file *file;     // file backing this mapping
+  uint64 offset;         // file offset, usually 0 in this lab
+};
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -78,9 +90,15 @@ struct trapframe {
   /* 264 */ uint64 t4;
   /* 272 */ uint64 t5;
   /* 280 */ uint64 t6;
+
+
 };
 
+
+
+
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
 
 // Per-process state
 struct proc {
@@ -105,4 +123,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct vma vmas[NVMA];
+  uint64 mmap_base;
 };
+
+
+

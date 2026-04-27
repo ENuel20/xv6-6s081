@@ -1,10 +1,13 @@
-#include "param.h"
 #include "types.h"
+#include "param.h"
 #include "memlayout.h"
-#include "elf.h"
 #include "riscv.h"
+#include "spinlock.h"
+#include "proc.h"
 #include "defs.h"
 #include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -431,4 +434,113 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int
+mmapfault(uint64 va)
+{
+  struct proc *p = myproc();
+  struct vma *v = 0;
+
+  va = PGROUNDDOWN(va);
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used &&
+       va >= p->vmas[i].addr &&
+       va < p->vmas[i].addr + p->vmas[i].length){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return -1;
+
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if(pte && (*pte & PTE_V))
+    return -1;
+
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+
+  memset(mem, 0, PGSIZE);
+
+  ilock(v->file->ip);
+  readi(v->file->ip, 0, (uint64)mem, v->offset + (va - v->addr), PGSIZE);
+  iunlock(v->file->ip);
+
+  int perm = PTE_U;
+
+  if(v->prot & PROT_READ)
+    perm |= PTE_R;
+
+  if(v->prot & PROT_WRITE)
+    perm |= PTE_W;
+
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, perm) < 0){
+    kfree(mem);
+    return -1;
+  }
+
+  return 0;
+}
+
+int
+munmapaddr(uint64 addr, int length)
+{
+  struct proc *p = myproc();
+  struct vma *v = 0;
+
+  if(length <= 0)
+    return -1;
+
+  uint64 start = PGROUNDDOWN(addr);
+  uint64 len = PGROUNDUP(length);
+  uint64 end = start + len;
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used &&
+       start >= p->vmas[i].addr &&
+       start < p->vmas[i].addr + p->vmas[i].length){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return -1;
+
+  for(uint64 a = start; a < end; a += PGSIZE){
+    pte_t *pte = walk(p->pagetable, a, 0);
+
+    if(pte && (*pte & PTE_V)){
+      if(v->flags == MAP_SHARED){
+        uint64 pa = PTE2PA(*pte);
+
+        begin_op();
+        ilock(v->file->ip);
+        writei(v->file->ip, 0, pa, v->offset + (a - v->addr), PGSIZE);
+        iunlock(v->file->ip);
+        end_op();
+      }
+
+      uvmunmap(p->pagetable, a, 1, 1);
+    }
+  }
+
+  if(start == v->addr && len == v->length){
+    fileclose(v->file);
+    v->used = 0;
+  } else if(start == v->addr){
+    v->addr += len;
+    v->offset += len;
+    v->length -= len;
+  } else if(end == v->addr + v->length){
+    v->length -= len;
+  } else {
+    return -1;
+  }
+
+  return 0;
 }
